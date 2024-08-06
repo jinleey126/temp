@@ -100,6 +100,25 @@ main drawbacks for full fine-tuning : 각각의 downstream 작업마다 다른 �
 신경망은 행렬곱을 수행하는 많은 dense layer들을 포함한다. 이 layer들 안에 있는 가중치 행렬은 전형적으로 full-rank이다. 특정한 작업에 adpat할 때, Aghajanyan et al., 2020는 사전학습된 모델이 적은 "instrisic dimension"을 가지며, 작은 subspace에서의 랜덤한 투사임에도 불구하고 여전히 효과적으로 학습할 수 있음을 보여주었다. 이 주장에 영향을 받아, 저자는 adaptation하는 동안 가중치 업데이트 또한 작은 "intrinsic rank"를 가질것이라 가정했다. 사전학습된 모델의 가중치 행렬을 $W_0$, 저자는 이 행렬의 업데이트를 latter with a low-rank decomposition $W_0 \Delta W = W_0 + BA$로 표현했다. 
 
 
+**A Generalization of Full Fine-tuning** (풀 파인튜닝의 일반화)
+파인 튜닝의 더 일반화된 형태는 사전학습된 파라미터의 부분집합을 학습할 수 있게 해준다. LoRA는 adptation하는 동안 full-rank를 가진 weight 행렬에 대한 accumulated gradient update가 필요하지 않기 때문에 더 큰 step을 가진다(업데이트 시 이동하는 거리가 더 멀다는 뜻인듯). 이는 모든 weight 행렬에 LoRA를 적용하고 모든 biases를 학습했을 때, 사전학습된 weight 행렬의 랭크를 LoRA 랭크 r로 세팅함으로써 풀 파인튜닝의 표현을 recover한다고 볼 수 있다. 다시 말해, 학습가능한 파라미터의 수가 증가할수록, LoRA 학습은 대충 원래 모델의 학습에 수렴한다고 본다. 반면, adapter 기반 방법은 MLP로 수렴하고, prefix 기반 방법은 long input sequence를 처리할 수 없다.
+
+**No Additional Inference Latency** (추가적인 추론 지연시간 없음)
+
+생성할 때 저자는 explicity $W$를 계산하고 저장할 수 있고 보통 추론을 수행한다. $W_0$와 $BA$ 모두 $\mathcal{R}^{d \times k$에 존재한다. 저자는 다른 수행가능한 과제로 전환해야할 때, $W_0$를 $BA$를 빼고 다른 $B`A`$를 더하는 것으로 커버할 수 있는데, 아주 적은 메모리 오버헤드를 가진 빠른 operation이다. 이는 파인튜닝 모델과 비교했을 때 추론 과정에서 어떠한 추가적인 지연시간도 없을을 설명하는데 충분하다.
+
+4.2 Applying LoRA to Transformer
+
+원칙적으로 저자는 학습가능한 파라미터의 수를 줄이기 위해 신경망 내의 어떤 가중치 행렬에도 LoRA를 적용할 수 있다. 트랜스포머 구조에서, 셀프 어텐션 모듈 내에 4개의 가중치 행렬($W_q, W_k, W_v, W_o$)이 있고, MLP 모듈에는 2개가 존재한다. 저자는 차원 $d_\textnormal{model} \tiems d_\textnormal{model}$인 단일 행렬 $W_q$ (또는 $W_k, W_v$)를 다룬다. 비록 어텐션 헤드 내 주로 슬라이스되는 것은 출력 차원일지라도 말이다. 저자는 본 연구를 실제 수행할 작업에 대한 어텐션 가중치에만 adapting하는 것으로 제한하고 MLP 모듈을 동결(해당 부분은 직접 수행할 작업에 대해 학습되지 않는다)한다.(simplicity와 parameter-efficiency를 위해) 저자는 섹션 7.1에서 트랜스포머 내 어텐션 가중치 행렬의 다른 유형을 adapting하는 효과에 대한 연구도 수행하였다. 저자는 MLP layer, LayerNorm Layer, biases에 대한 adapting은 추후 연구로 남긴다.
+  
+
+**Practical Benefits and Limitations** : 가장 중요한 이점은 reduction in memory and storage usage. Adam으로 학습된 큰 트랜스포머에서, VRAM 사용량은 2/3까지 줄였다.(r이 모델 차원 d_model 보다 작았을 경우 동결된 파라미터에 대한 optimizer 상태를 저장할 필요가 없기 때문에) GPT-3 175B에서, 학습하는 동안의 VRAM consumption을 1.2TB->350GM까지 줄였음. $r=4$이고 query와 value projection matrices만 adaptation에서 사용될 경우 체크초인트 크기는 대충 $10000 \times$ (from 350GB to 35MB)까지 줄어든다. 이는 GPU를 덜 사용하고 I/O 병목을 피하면서 학습할 수 있게끔 해준다.
+다른 장점은 작업들 간 전환을 LoRA 가중치만 바꿔 훨씬 적은 비용으로 전개할 수 있다는 것이다.
+이를 통해 사전 훈련된 가중치를 VRAM에 저장하는 기기에서 즉시 교체할 수 있는 많은 맞춤형 모델을 생성할 수 있다.
+또한 풀 파인튜닝과 비교했을 때 GPT-3 175B의 학습 속도가 25% 가까이 증가했음을 관찰하였다. 
+
+LoRA에도 한계가 있다. 예를 들어, 추가적인 추론 지연을 제거하기 위해 A와 B를 W에 흡수하기로 선택한 경우, 서로 다른 A와 B를 가진 다양한 작업에 대한 입력을 단일 순전파에서 일괄 처리하는 것이 간단하지 않다. 비록 지연 시간이 중요하지 않을 경우 가중치를 병합하지 않고 배치 내 샘플에 사용할 LoRA 을 동적으로 선택하는 것이 가능하긴 하지만 말이다.
+
 ### Empirical Experiments
 
 GPT-3 175B로 크기를 키우기 전에, GPT-2, DeBERTa, RoBERTa를 LoRA로각 실제 수행 작업에 학습하여 성능을 평가하였다.
@@ -114,9 +133,30 @@ GPT-3 175B로 크기를 키우기 전에, GPT-2, DeBERTa, RoBERTa를 LoRA로각 
 
 **Bias-only or BitFit** : 다른 모든 것들은 동결하고 bias 벡터들만 학습한 baseline, 이전 연구 BitFit(Zaken et al., 2021)
 
-**Prefix-embedding tuning(PreEmbed)** : 입력 토큰 사이에 special 토큰을 넣는 방법. 이 special token들은 학습가능한 워드 임베딩을 가지며, 일반적으로 모델의 단어 내에는 없음. 그러한 토큰들이 있을 경우, 모델 성능에 영향을 미칠 수 있기 때문. 저자는 "prefixing"(프롬프트에서 그러한 토큰을 앞에 추가)과 "infixing"(프롬프트 뒤에 붙임)에 초점을 맞춘다. 저자는 prefix 토큰의 수를 $l_p$로, infix 토큰의 수를 $l_i$로 정의하였다. 학습가능한 파라미터의 수는 $|\Theta|=d_\textnormal{model} \times (l_p+l_i)$이다. 
+**Prefix-embedding tuning(PreEmbed)** : 입력 토큰 사이에 special 토큰을 넣는 방법. 이 special token들은 학습가능한 워드 임베딩을 가지며, 일반적으로 모델의 단어 내에는 없음. 그러한 토큰들이 있을 경우, 모델 성능에 영향을 미칠 수 있기 때문. 저자는 "prefixing"(프롬프트에서 그러한 토큰을 앞에 추가)과 "infixing"(프롬프트 뒤에 붙임)에 초점을 맞춘다. 저자는 prefix 토큰의 수를 $l_p$로, infix 토큰의 수를 $l_i$로 정의하였다. 학습가능한 파라미터의 수는 $|\Theta|=d_\textnormal{model} \times (l_p+l_i)$이다.
+
+**Prefix-layer tuning (PreLayer)** : prefix-embedding tunint의 연장선. 단순히 몇몇 special 토큰들에 대해 워드 임베딩을 학습하는 것 대신에 (또는 임베딩 레이어 다음 activations과 동등함), 저자는 모든 트랜스포머 레이어 뒤의 activations을 학습한다. 이 activations은 단순히 학습가능한 것으로 교체된 이전 레이어로 부터 계산된다. 학습가능한 파라미터의 결과값은 $|\Theta|= L \times d_{model} \times (l_p+l_i)$이다. $L$은 트랜스포머 레이어의 수. 
+
+**Adapter tuning** : (Houlsby et al., 2019)에서 제안. 셀프 어텐션 모듈(그리고 MLP 모듈)과 하위 residual connection 사이에 adapter layer를 추가한다. adapter layer내 두 개의 fully connected layers가 있다(서로 비선형인). 우리는 이 original design을 $Adapter^H$라 한다.
+
+최근, Lin et al(2020)는 MLP 모듈 다음과 LayerNorm 다음에 adapter layer를 적용하는 더 효과적인 desing을 제안했다. 우리는 이를 $Adapter^L$이라 한다. 이와 굉장히 비슷한 또다른 design( Pfeiffer et al.(2021)이 제안)을 $Adapter^P$라 한다. 또한, 저자는 다른 baseline AdapterDrop(더 효율성을 추구하기 위해 몇몇의 adapter layer를 버리는(drop)) $Adapter^D$도 포함한다. 
+
+저자는 저자가 비교하려고 하는 baseline의 수를 최대로 늘리기 위해서 이전 연구에서 사용된 숫자들을 가져가서 사용했다. 첫번째 컬럼 내의 asterik(*)가 달린 값들이 그러하다.
+모든 경우에서 저자는 $|\Theta|=$이며, 는 adapter 레이어의 수이고, 는 학습가능한 LayerNorm의 수를 의미한다.
+
+**LoRA** : 존재하는 weight matrices에 
+
+
 
 ### 관련 연구
+
+**Transformer Language Models** : 일반 도메인 데이터로 먼저 모델을 사전학습시킨 다음, 작업에 특화된 데이터로 파인 튜닝하는 것이 작업에 특화된 데이털 바로 학습하는 것보다 훨씬 더 성능이 좋다.
+
+**Prompt Engineering and Fine-Tuning** : GPT-3 175B 모델이 몇개의 추가적인 학습 예제만으로도 특정 행동을 adapt할 수 있긴 하지만, 그 결과는 입력 프롬프트에 의해 크게 좌우된다. 그래서, 프롬프트를 구성하고 포맷팅하는 것은 중요하다. 파인튜닝은 특정 작업을 더 잘 수행하도록 재학습하는 것인데, GPT-3 175B와 같이 모델의 크기 어마어마할 경우 학습 자체의 장벽이 높아진다.
+
+**Parameter-Efficient Adaptation** :
+
+**Low-Rank Structure in Deep LEearning** : 
 
 ### Low-Rank Update에 대한 이해
 
