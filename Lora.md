@@ -93,10 +93,28 @@ main drawbacks for full fine-tuning : 각각의 downstream 작업마다 다른 �
   prefix tuning는 최적화하기 어렵다. 학습가능한 파라미터 내에서 일정한 규칙성없이 성능이 변하기 때문이다. adapatation을 위한 시퀀스 길이의 일부를 차지하기 때문에, 실제 수행하려는 작업을 처리하기 위해 사용가능한 시퀀스 길이가 줄어들게 된다. 그래서 저자는 오히려 다른 방법과 비교하여 프롬프트 튜닝이 덜 동작할 것이라고 의심했다. (섹션 5)
   
 
-### 제안 방법
+### 제안 방법: LoRA
+
+4.1 Low-Rank-Parametrized Update Matrices
+
+신경망은 행렬곱을 수행하는 많은 dense layer들을 포함한다. 이 layer들 안에 있는 가중치 행렬은 전형적으로 full-rank이다. 특정한 작업에 adpat할 때, Aghajanyan et al., 2020는 사전학습된 모델이 적은 "instrisic dimension"을 가지며, 작은 subspace에서의 랜덤한 투사임에도 불구하고 여전히 효과적으로 학습할 수 있음을 보여주었다. 이 주장에 영향을 받아, 저자는 adaptation하는 동안 가중치 업데이트 또한 작은 "intrinsic rank"를 가질것이라 가정했다. 사전학습된 모델의 가중치 행렬을 $W_0$, 저자는 이 행렬의 업데이트를 latter with a low-rank decomposition $W_0 \Delta W = W_0 + BA$로 표현했다. 
 
 
 ### Empirical Experiments
+
+GPT-3 175B로 크기를 키우기 전에, GPT-2, DeBERTa, RoBERTa를 LoRA로각 실제 수행 작업에 학습하여 성능을 평가하였다.
+실험은 from natural language understanding(NLU) to generation(NLG)
+구체적으로, 우리는 직접적인 비교를 위해 GPT-2에 적용한 Li&Liang(2021)의 setup을 따랐고, WikiSQL(NL to SQL queries), SAMSum(대화 요약)을 추가했다. 사용한 데이터셋에 대한 상세한 내용은 부록 C에 정리되어있으며, 저자는 모든 실험을 위해 NVIDIA Tesla V100을 사용했다.
+
+5.1 BASELINES
+
+다른 baseline들과 많이 비교하기 위해, 이전 연구의 셋업을 그대로 사용했는데, 그래서 때에 따라 몇몇의 작업에선 특정 baseline들의 결과만 존재한다.
+
+**Fine-Tuning(FT)**는 adapation을 위한 일반적인 접근 방법이다. 파인튜닝하는 동안, 모델은 사전학습된 weight와 bias로 초기화되고, 모든 모델 파라미터는 gradient 업데이트에 맡겨진다. 간단한 variant는 다른 layer들을 동결하고 몇몇의 layer만 업데이트하는 것이다. 저자는 GPT-2를 사용한 이전 연구(Li&Liang,2021: 마지막 두 개의 layer에만 adapts하였음, FT^(Top2)) baseline을 포함하여 기록하고 있다.
+
+**Bias-only or BitFit** : 다른 모든 것들은 동결하고 bias 벡터들만 학습한 baseline, 이전 연구 BitFit(Zaken et al., 2021)
+
+**Prefix-embedding tuning(PreEmbed)** : 입력 토큰 사이에 special 토큰을 넣는 방법. 이 special token들은 학습가능한 워드 임베딩을 가지며, 일반적으로 모델의 단어 내에는 없음. 그러한 토큰들이 있을 경우, 모델 성능에 영향을 미칠 수 있기 때문. 저자는 "prefixing"(프롬프트에서 그러한 토큰을 앞에 추가)과 "infixing"(프롬프트 뒤에 붙임)에 초점을 맞춘다. 저자는 prefix 토큰의 수를 $l_p$로, infix 토큰의 수를 $l_i$로 정의하였다. 학습가능한 파라미터의 수는 $|\Theta|=d_\textnormal{model} \times (l_p+l_i)$이다. 
 
 ### 관련 연구
 
